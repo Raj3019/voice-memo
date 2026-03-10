@@ -1,6 +1,6 @@
 import { Router} from "express";
 import { authMiddleware } from "../middleware/auth.middleware.ts";
-import { createCategories, getAllCategories } from "../controllers/categories.controller.ts";
+import { createCategories, deleteCategory, getAllCategories, updateCategories } from "../controllers/categories.controller.ts";
 
 const categoryRouter = Router()
 
@@ -9,5 +9,11 @@ categoryRouter.post('/', authMiddleware, createCategories)
 
 //get category
 categoryRouter.get('/', authMiddleware, getAllCategories)
+
+//update category
+categoryRouter.patch('/:categoryId', authMiddleware, updateCategories)
+
+//delete category
+categoryRouter.delete('/:categoryId', authMiddleware, deleteCategory)
 
 export default categoryRouter

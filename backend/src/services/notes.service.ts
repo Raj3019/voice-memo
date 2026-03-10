@@ -26,3 +26,12 @@ export const getNotesById = async (userId: string, noteId: string) => {
   return getNote
 }
 
+export const updateNoteById = async (userId: string, noteId: string, title: string, description: string, categoryId?: string) => {
+  const updateNote = await db.update(notes).set({ title, description, categoryId }).where(and(eq(notes.id, noteId), eq(notes.userId, userId))).returning()
+  return updateNote
+}
+
+export const deleteNoteById = async(userId: string, noteId: string) => {
+  const deleteNote = await db.delete(notes).where(and(eq(notes.userId, userId), eq(notes.id, noteId))).returning()
+  return deleteNote
+}
