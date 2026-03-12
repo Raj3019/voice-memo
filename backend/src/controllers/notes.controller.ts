@@ -4,6 +4,12 @@ import { getNotes as getNoteService } from "../services/notes.service.ts";
 import { getNotesById as getNotesByIdService } from "../services/notes.service.ts";
 import { updateNoteById as updateNotebyIdService } from "../services/notes.service.ts";
 import { deleteNoteById as deleteNoteByIdService } from "../services/notes.service.ts";
+import { db } from "../db/index.ts";
+import { audioFile, notes } from "../db/schema.ts";
+import { compressAudio } from "../utils/compressAudio.ts";
+import { uploadToCloudinary } from "../utils/uploadToCloudinary.ts";
+import { eq } from "drizzle-orm";
+import { addTranscriptionJob } from "../queues/transcription.queue.ts";
 
 
 export const createNote = async (req: Request, res: Response) => {
@@ -114,5 +120,62 @@ export const deleteNote = async(req: Request, res: Response) => {
   } catch (error) {
     console.log(error)
     return res.status(500).json({message: "Unable to delete the Note", error})
+  }
+}
+
+export const uploadAudio = async (req:Request, res: Response) => {
+  try {
+    //1. check if file exists
+    if (!req.file) {
+      return res.status(400).json({error: 'No audio file provided'})
+    }
+
+    const userId = req.user!.id // from middleware
+
+    //2. create note in db first (status: 'uploading')
+    const [note] = await db.insert(notes).values({
+      userId,
+      status: 'uploading',
+    }).returning();
+
+    if (!note) {
+      return res.status(500).json({ error: 'Failed to create note' });
+    }
+
+    //3. Compress the audio
+    console.log('compressing audio....')
+    const compressedBuffer = await compressAudio(req.file.buffer)
+
+    //4. uploading compressed audio to cloudnary
+    console.log('uploading to cloudnary');
+    const audioUrl = await uploadToCloudinary(compressedBuffer, `audio-${note.id}`)
+
+    //5. save audio file record in db
+    await db.insert(audioFile).values({
+      noteId: note.id,
+      userId,
+      url: audioUrl,
+      format: 'mp3',
+      duration: 0
+    })
+
+    //6. update note status to 'processing'
+    await db.update(notes)
+      .set({ status: 'processing' })
+      .where(eq(notes.id, note.id));
+
+    // 7. Add job to queue — worker handles transcription
+    await addTranscriptionJob(note.id, userId, audioUrl); 
+    
+    // 8. Return response immediately — don't wait for transcription!
+    return res.status(201).json({
+      message: 'Audio uploaded successfully, transcription in progress',
+      noteId: note.id,
+      audioUrl,
+    });
+
+  } catch (error) {
+    console.error('Upload error:', error);
+    return res.status(500).json({ error: 'Something went wrong' });
   }
 }

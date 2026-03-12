@@ -1,6 +1,7 @@
 import { Router} from "express";
-import { createNote, deleteNote, getAllNotes, getNotesById, updateNote } from "../controllers/notes.controller.ts";
+import { createNote, deleteNote, getAllNotes, getNotesById, updateNote, uploadAudio } from "../controllers/notes.controller.ts";
 import { authMiddleware } from "../middleware/auth.middleware.ts";
+import { upload } from "../config/multer.ts";
 
 const notesRouter = Router()
 
@@ -18,5 +19,8 @@ notesRouter.patch('/:noteId', authMiddleware, updateNote)
 
 //delete note by id
 notesRouter.delete('/:noteId', authMiddleware, deleteNote)
+
+//upload audio 
+notesRouter.post('/upload',authMiddleware, upload.single('audio'), uploadAudio)
 
 export default notesRouter
