@@ -3,6 +3,7 @@ import { transcribeAudio } from "../utils/transcribe.ts";
 import { db } from "../db/index.ts";
 import { notes } from "../db/schema.ts";
 import { eq } from "drizzle-orm";
+import { generateNoteContent } from "../utils/generateNoteContent.ts";
 
 const redisConnection = {
   host: '127.0.0.1',
@@ -19,10 +20,15 @@ const transcriptionWorker = new Worker('transcription', async(job) => {
 
   console.log('📝 Transcript received:', transcript.slice(0, 100) + '...');
 
-  // 2. Update note in DB — save transcript + mark as completed
+  //2. Generate title + description from transcript
+  const {title, description} = await generateNoteContent(transcript)
+
+  // 3. Update note with everything
   await db.update(notes)
   .set({
     transcript,
+    title,
+    description,
     status: 'completed',
     updatedAt: new Date()
   })

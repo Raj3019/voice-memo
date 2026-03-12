@@ -172,6 +172,7 @@ export const uploadAudio = async (req:Request, res: Response) => {
       message: 'Audio uploaded successfully, transcription in progress',
       noteId: note.id,
       audioUrl,
+      createdAt: note.createdAt
     });
 
   } catch (error) {
