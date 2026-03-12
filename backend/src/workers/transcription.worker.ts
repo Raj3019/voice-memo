@@ -15,27 +15,49 @@ const transcriptionWorker = new Worker('transcription', async(job) => {
   
   console.log('🎙️ Starting transcription for note:', noteId);
 
-  // 1. Transcribe the audio
-  const transcript  = await transcribeAudio(audioFile)
+  // 1. Transcribe the audio — critical step, retry if fails
+  let transcript: string;
+  try {
+    transcript = await transcribeAudio(audioFile);
+    console.log('📝 Transcript received:', transcript.slice(0, 100) + '...');
+  } catch (err) {
+    console.error('❌ Transcription failed:', err);
+    // mark note as failed so user knows something went wrong
+      if (job.attemptsMade >= (job.opts.attempts ?? 1) - 1) {
+    await db.update(notes)
+      .set({ status: 'failed', updatedAt: new Date() })
+      .where(eq(notes.id, noteId));
+  }
+  throw err
+}
 
-  console.log('📝 Transcript received:', transcript.slice(0, 100) + '...');
+  // 2. Generate title + description — not critical, soft failure
+  let title = null;
+  let description = null;
+  try {
+    const generated = await generateNoteContent(transcript);
+    title = generated.title;
+    description = generated.description;
+    console.log('✨ Generated title:', title);
+    console.log('📄 Generated description:', description);
+  } catch (err) {
+    // Groq failed — no worries, we still have transcript
+    // title and description stay null
+    console.error('⚠️ Title/description generation failed, saving transcript only:', err);
+  }
 
-  //2. Generate title + description from transcript
-  const {title, description} = await generateNoteContent(transcript)
-
-  // 3. Update note with everything
+  // 3. Update note with everything we have
   await db.update(notes)
-  .set({
-    transcript,
-    title,
-    description,
-    status: 'completed',
-    updatedAt: new Date()
-  })
-  .where(eq(notes.id, noteId)
-)
+    .set({
+      transcript,
+      title,
+      description,
+      status: 'completed',
+      updatedAt: new Date()
+    })
+    .where(eq(notes.id, noteId));
 
-console.log('✅ Note updated successfully!');
+  console.log('✅ Note updated successfully!');
 
 }, {
   connection: redisConnection
@@ -46,6 +68,5 @@ transcriptionWorker.on('completed', (job) => console.log('✅ Job completed!', j
 transcriptionWorker.on('failed', (job, err) => console.log('❌ Job failed!', err))
 transcriptionWorker.on('active', (job) => console.log('🔄 Job active!', job.data))
 transcriptionWorker.on('error', (err) => console.log('🔴 Worker error!', err))
-
 
 console.log('Worker is running and waiting for jobs...')

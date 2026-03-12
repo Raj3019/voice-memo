@@ -6,7 +6,14 @@ const redisConnection = {
 }
 
 export const transcriptionQueue = new Queue('transcription', {
-  connection: redisConnection
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 5000
+    }
+  }
 })
 
 export const addTranscriptionJob = async (noteId: string, userId: string, file: any) => {

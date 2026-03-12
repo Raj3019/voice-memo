@@ -142,13 +142,27 @@ export const uploadAudio = async (req:Request, res: Response) => {
       return res.status(500).json({ error: 'Failed to create note' });
     }
 
-    //3. Compress the audio
-    console.log('compressing audio....')
-    const compressedBuffer = await compressAudio(req.file.buffer)
+    // 3. Compress audio
+    let compressedBuffer: Buffer;
+    try {
+      console.log('Compressing audio....');
+      compressedBuffer = await compressAudio(req.file.buffer);
+    } catch (err) {
+      // compression failed — delete the note we just created
+      await db.delete(notes).where(eq(notes.id, note.id));
+      return res.status(500).json({ error: 'Audio compression failed' });
+    }
 
-    //4. uploading compressed audio to cloudnary
-    console.log('uploading to cloudnary');
-    const audioUrl = await uploadToCloudinary(compressedBuffer, `audio-${note.id}`)
+    // 4. Upload to Cloudinary
+    let audioUrl: string;
+    try {
+      console.log('Uploading to cloudinary');
+      audioUrl = await uploadToCloudinary(compressedBuffer, `audio-${note.id}`);
+    } catch (err) {
+      // upload failed — delete the note
+      await db.delete(notes).where(eq(notes.id, note.id));
+      return res.status(500).json({ error: 'Audio upload failed' });
+    }
 
     //5. save audio file record in db
     await db.insert(audioFile).values({
