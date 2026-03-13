@@ -40,7 +40,11 @@ export const getAllNotes = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Unauthorized" })
     }
 
-    const allNotes = await getNoteService(userId)
+    // grab query params if provided
+    const categoryId = req.query.categoryId as string | undefined
+    const status = req.query.status as string | undefined
+
+    const allNotes = await getNoteService(userId, categoryId, status)
 
     return res.status(200).json({ message: "All note feteched successfully", allNotes })
   } catch (error) {

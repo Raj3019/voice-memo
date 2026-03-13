@@ -16,9 +16,15 @@ export const createNote = async (userId: string, title: string, description: str
   return note[0]
 }
 
-export const getNotes = async (userId: string) => {
-  const getNotes = await db.select().from(notes).where(eq(notes.userId, userId))
-  return getNotes
+export const getNotes = async (userId: string, categoryId?: string, status?: string) => {
+  const filters = [eq(notes.userId, userId)]
+
+  if(categoryId) filters.push(eq(notes.categoryId, categoryId))
+  if(status) filters.push(eq(notes.status, status))
+  //const getNotes = await db.select().from(notes).where(eq(notes.userId, userId))
+  //return getNotes
+  const allNotes = await db.select().from(notes).where(and(...filters))
+  return allNotes
 }
 
 export const getNotesById = async (userId: string, noteId: string) => {
