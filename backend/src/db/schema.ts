@@ -1,4 +1,4 @@
-import { uuid, text, unique, timestamp, pgTable, varchar, integer } from "drizzle-orm/pg-core"
+import { uuid, text, unique, timestamp, pgTable, varchar, integer, vector } from "drizzle-orm/pg-core"
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -25,6 +25,7 @@ export const notes = pgTable('notes', {
   description: text('description'),
   transcript: text('transcript'),
   status: text('status').notNull().default('uploading'),
+  embedding: vector('embedding', {dimensions: 768 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdateFn(() => new Date())
 })

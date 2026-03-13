@@ -1,5 +1,5 @@
 import { Router} from "express";
-import { createNote, deleteNote, getAllNotes, getNoteAudio, getNotesById, updateNote, uploadAudio } from "../controllers/notes.controller.ts";
+import { createNote, deleteNote, getAllNotes, getNoteAudio, getNotesById, serachNotes, updateNote, uploadAudio } from "../controllers/notes.controller.ts";
 import { authMiddleware } from "../middleware/auth.middleware.ts";
 import { upload } from "../config/multer.ts";
 
@@ -10,6 +10,9 @@ notesRouter.post('/', authMiddleware, createNote)
 
 //get all notes
 notesRouter.get('/', authMiddleware, getAllNotes)
+
+//search
+notesRouter.get("/search", authMiddleware, serachNotes);
 
 //get note by id
 notesRouter.get('/:noteId', authMiddleware, getNotesById)

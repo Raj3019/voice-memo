@@ -4,6 +4,7 @@ import { db } from "../db/index.ts";
 import { notes } from "../db/schema.ts";
 import { eq } from "drizzle-orm";
 import { generateNoteContent } from "../utils/generateNoteContent.ts";
+import { generateEmbedding } from "../utils/generateEmbedding.ts";
 
 const redisConnection = {
   host: '127.0.0.1',
@@ -34,6 +35,7 @@ const transcriptionWorker = new Worker('transcription', async(job) => {
   // 2. Generate title + description — not critical, soft failure
   let title = null;
   let description = null;
+  let embedding = null;
   try {
     const generated = await generateNoteContent(transcript);
     title = generated.title;
@@ -46,12 +48,21 @@ const transcriptionWorker = new Worker('transcription', async(job) => {
     console.error('⚠️ Title/description generation failed, saving transcript only:', err);
   }
 
+  try {
+    const textToEmbed =  `${title ?? ''} ${transcript}`.trim()
+    embedding = await generateEmbedding(textToEmbed)
+    console.log('Embedding generated successfully!');
+  } catch (error) {
+    console.error('Embedding generation failed, saving without embedding:', error);
+  }
+
   // 3. Update note with everything we have
   await db.update(notes)
     .set({
       transcript,
       title,
       description,
+      embedding,
       status: 'completed',
       updatedAt: new Date()
     })

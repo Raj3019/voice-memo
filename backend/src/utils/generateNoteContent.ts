@@ -28,14 +28,15 @@ export const generateNoteContent = async (transcript: string): Promise<Generated
       },
       {
         role: 'user',
-        content: `Generate a title and description for this transcript: "${transcript}"`
+        content: `Generate a title and description for this transcript: ${transcript}`
       }
     ],
     temperature: 0.7,
   });
 
   const content = response.choices[0]!.message.content!;
-  const parsed: GeneratedContent = JSON.parse(content);
+  const cleaned = content.replace(/```json/g, '').replace(/```/g, '').trim();
+  const parsed: GeneratedContent = JSON.parse(cleaned);
 
   return parsed;
 };

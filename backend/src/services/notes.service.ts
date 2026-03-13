@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { audioFile, categories, notes } from "../db/schema.ts";
+import { generateEmbedding } from "../utils/generateEmbedding.ts";
 
 export const createNote = async (userId: string, title: string, description: string, categoryId?: string) => {
   if (categoryId) {
@@ -16,8 +17,10 @@ export const createNote = async (userId: string, title: string, description: str
   return note[0]
 }
 
-export const getNotes = async (userId: string, filters: { categoryId?: string, status?: string, page?: number, limit?: number, sortBy?: string;
-  order?: string; }) => {
+export const getNotes = async (userId: string, filters: {
+  categoryId?: string, status?: string, page?: number, limit?: number, sortBy?: string;
+  order?: string;
+}) => {
   const page = filters.page ?? 1
   const limit = filters.limit ?? 10;
   const offset = (page - 1) * limit
@@ -31,10 +34,10 @@ export const getNotes = async (userId: string, filters: { categoryId?: string, s
   // const allNotes = await db.select().from(notes).where(and(...filters))
 
   const sortColumn = filters.sortBy === "title"
-  ? notes.title
-  : filters.sortBy === "updatedAt"
-  ? notes.updatedAt
-  : notes.createdAt
+    ? notes.title
+    : filters.sortBy === "updatedAt"
+      ? notes.updatedAt
+      : notes.createdAt
 
   const sortOrder = filters.order === "asc" ? asc(sortColumn) : desc(sortColumn);
 
@@ -46,12 +49,12 @@ export const getNotes = async (userId: string, filters: { categoryId?: string, s
     .offset(offset)
     .orderBy(sortOrder);
 
-  const countResult  = await db
+  const countResult = await db
     .select({ count: sql<number>`count(*)` })
     .from(notes)
     .where(and(...conditions));
 
-    const total = Number(countResult[0]?.count ?? 0)
+  const total = Number(countResult[0]?.count ?? 0)
   return {
     data,
     meta: {
@@ -78,8 +81,7 @@ export const deleteNoteById = async (userId: string, noteId: string) => {
   return deleteNote
 }
 
-
-export const getNoteAudio = async(noteId: string, userId: string) => {
+export const getNoteAudio = async (noteId: string, userId: string) => {
   const note = await db.select().from(notes).where(and(eq(notes.id, noteId), eq(notes.userId, userId))).limit(1)
 
   if (note.length === 0) {
@@ -89,3 +91,39 @@ export const getNoteAudio = async(noteId: string, userId: string) => {
   const audioFiles = await db.select().from(audioFile).where(eq(audioFile.noteId, noteId)).orderBy(desc(audioFile.createdAt))
   return audioFiles;
 }
+
+export const searchNotes = async (userId: string, query: string, type: string) => {
+
+  //Regular text search
+  if (type === 'text') {
+    const results = await db
+      .select()
+      .from(notes)
+      .where(
+        and(
+          eq(notes.userId, userId),
+          or(
+            ilike(notes.title, `%${query}%`),
+            ilike(notes.transcript, `%${query}%`)
+          )
+        )
+      )
+      .orderBy(desc(notes.createdAt))
+      .limit(10);
+
+    return results;
+  }
+
+  // Semantic search (default)
+  const queryEmbedding = await generateEmbedding(query);
+  const vectorString = `[${queryEmbedding.join(',')}]`;
+
+  const results = await db
+    .select()
+    .from(notes)
+    .where(and(eq(notes.userId, userId)))
+    .orderBy(sql`embedding <=> ${vectorString}::vector`)
+    .limit(10);
+
+  return results;
+};

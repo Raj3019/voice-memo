@@ -5,6 +5,7 @@ import { getNotesById as getNotesByIdService } from "../services/notes.service.t
 import { updateNoteById as updateNotebyIdService } from "../services/notes.service.ts";
 import { deleteNoteById as deleteNoteByIdService } from "../services/notes.service.ts";
 import {getNoteAudio as getNoteAudioService} from "../services/notes.service.ts"
+import { searchNotes as searchNotesService } from "../services/notes.service.ts";
 import { db } from "../db/index.ts";
 import { audioFile, notes } from "../db/schema.ts";
 import { compressAudio } from "../utils/compressAudio.ts";
@@ -233,5 +234,29 @@ export const getNoteAudio = async (req:Request, res: Response) => {
   } catch (error) {
     console.log(error);
     return res.status(500).json({ success: false, message: "Failed to fetch audio files" });
+  }
+}
+
+export const serachNotes = async(req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const query = req.query.q as string
+    const type = (req.query.type as string) || 'text';
+
+    if (!query || query.trim() === '') {
+      return res.status(400).json({ success: false, message: "Search query is required" });
+    }
+
+    const results = await searchNotesService(userId, query, type)
+
+    return res.status(200).json({ success: true, data: results })
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, message: "Search failed" });
   }
 }
