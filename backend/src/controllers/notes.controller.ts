@@ -73,7 +73,7 @@ export const getNotesById = async (req: Request, res: Response) => {
   }
 }
 
-export const updateNote = async(req: Request, res: Response) => {
+export const updateNote = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id
     const notesId = req.params.noteId as string
@@ -87,18 +87,18 @@ export const updateNote = async(req: Request, res: Response) => {
 
     const { title, description, categoryId } = req.body
 
-    const update = await updateNotebyIdService(userId, notesId, title, description, categoryId )
+    const update = await updateNotebyIdService(userId, notesId, title, description, categoryId)
 
-    return res.status(200).json({message: "The note was updated successfully!", update})
+    return res.status(200).json({ message: "The note was updated successfully!", update })
 
   } catch (error) {
     console.log(error)
-    return res.status(500).json({message: "The note was unable to update", error})
+    return res.status(500).json({ message: "The note was unable to update", error })
   }
 }
 
 
-export const deleteNote = async(req: Request, res: Response) => {
+export const deleteNote = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id
     const notesId = req.params.noteId as string
@@ -116,18 +116,18 @@ export const deleteNote = async(req: Request, res: Response) => {
       return res.status(404).json({ message: "Note not found or doesn't belong to you" })
     }
 
-    return res.status(200).json({message: "Note Deleted Successfully"})
+    return res.status(200).json({ message: "Note Deleted Successfully" })
   } catch (error) {
     console.log(error)
-    return res.status(500).json({message: "Unable to delete the Note", error})
+    return res.status(500).json({ message: "Unable to delete the Note", error })
   }
 }
 
-export const uploadAudio = async (req:Request, res: Response) => {
+export const uploadAudio = async (req: Request, res: Response) => {
   try {
     //1. check if file exists
     if (!req.file) {
-      return res.status(400).json({error: 'No audio file provided'})
+      return res.status(400).json({ error: 'No audio file provided' })
     }
 
     const userId = req.user!.id // from middleware
@@ -144,9 +144,13 @@ export const uploadAudio = async (req:Request, res: Response) => {
 
     // 3. Compress audio
     let compressedBuffer: Buffer;
+    let audioDuration: number;
     try {
       console.log('Compressing audio....');
-      compressedBuffer = await compressAudio(req.file.buffer);
+      const result = await compressAudio(req.file.buffer);
+      compressedBuffer = result.buffer;
+      audioDuration = result.duration;
+      console.log('Duration:', audioDuration, 'seconds');
     } catch (err) {
       // compression failed — delete the note we just created
       await db.delete(notes).where(eq(notes.id, note.id));
@@ -170,7 +174,7 @@ export const uploadAudio = async (req:Request, res: Response) => {
       userId,
       url: audioUrl,
       format: 'mp3',
-      duration: 0
+      duration: audioDuration
     })
 
     //6. update note status to 'processing'
@@ -179,8 +183,8 @@ export const uploadAudio = async (req:Request, res: Response) => {
       .where(eq(notes.id, note.id));
 
     // 7. Add job to queue — worker handles transcription
-    await addTranscriptionJob(note.id, userId, audioUrl); 
-    
+    await addTranscriptionJob(note.id, userId, audioUrl);
+
     // 8. Return response immediately — don't wait for transcription!
     return res.status(201).json({
       message: 'Audio uploaded successfully, transcription in progress',
