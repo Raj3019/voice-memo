@@ -4,6 +4,7 @@ import { getNotes as getNoteService } from "../services/notes.service.ts";
 import { getNotesById as getNotesByIdService } from "../services/notes.service.ts";
 import { updateNoteById as updateNotebyIdService } from "../services/notes.service.ts";
 import { deleteNoteById as deleteNoteByIdService } from "../services/notes.service.ts";
+import {getNoteAudio as getNoteAudioService} from "../services/notes.service.ts"
 import { db } from "../db/index.ts";
 import { audioFile, notes } from "../db/schema.ts";
 import { compressAudio } from "../utils/compressAudio.ts";
@@ -36,17 +37,28 @@ export const createNote = async (req: Request, res: Response) => {
 export const getAllNotes = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id
+
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" })
     }
 
-    // grab query params if provided
-    const categoryId = req.query.categoryId as string | undefined
-    const status = req.query.status as string | undefined
+    const categoryId = req.query.categoryId as string | undefined;
+    const status = req.query.status as string | undefined;
+    const page = req.query.page ? parseInt(req.query.page as string) : 1;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+    const sortBy = (req.query.sortBy as string) || "createdAt";
+    const order = (req.query.order as string) || "desc";
 
-    const allNotes = await getNoteService(userId, categoryId, status)
+    const result = await getNoteService(userId, {
+      ...(categoryId && { categoryId }),
+      ...(status && { status }),
+      page,
+      limit,
+      sortBy,
+      order
+    });
 
-    return res.status(200).json({ message: "All note feteched successfully", allNotes })
+    return res.status(200).json({ message: "All note feteched successfully", ...result, })
   } catch (error) {
     console.log(error);
     return res.status(500).json({ message: "Error fetching Notes", error })
@@ -200,5 +212,26 @@ export const uploadAudio = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Upload error:', error);
     return res.status(500).json({ error: 'Something went wrong' });
+  }
+}
+
+export const getNoteAudio = async (req:Request, res: Response) => {
+  try {
+    const userId = req.user?.id
+    const id = req.params.id as string
+
+    if (!userId) {
+      return res.status(401).json({success: false, message: "Unauthorized"})
+    }
+
+    const audioFiles = await getNoteAudioService (id, userId);
+
+     if (audioFiles === null) {
+      return res.status(404).json({ success: false, message: "Note not found" });
+    }
+    return res.status(200).json({ success: true, data: audioFiles });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, message: "Failed to fetch audio files" });
   }
 }

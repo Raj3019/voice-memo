@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
-import { categories, notes } from "../db/schema.ts";
+import { audioFile, categories, notes } from "../db/schema.ts";
 
 export const createNote = async (userId: string, title: string, description: string, categoryId?: string) => {
   if (categoryId) {
@@ -16,15 +16,51 @@ export const createNote = async (userId: string, title: string, description: str
   return note[0]
 }
 
-export const getNotes = async (userId: string, categoryId?: string, status?: string) => {
-  const filters = [eq(notes.userId, userId)]
+export const getNotes = async (userId: string, filters: { categoryId?: string, status?: string, page?: number, limit?: number, sortBy?: string;
+  order?: string; }) => {
+  const page = filters.page ?? 1
+  const limit = filters.limit ?? 10;
+  const offset = (page - 1) * limit
 
-  if(categoryId) filters.push(eq(notes.categoryId, categoryId))
-  if(status) filters.push(eq(notes.status, status))
+  const conditions = [eq(notes.userId, userId)]
+
+  if (filters.categoryId) conditions.push(eq(notes.categoryId, filters.categoryId))
+  if (filters.status) conditions.push(eq(notes.status, filters.status))
   //const getNotes = await db.select().from(notes).where(eq(notes.userId, userId))
   //return getNotes
-  const allNotes = await db.select().from(notes).where(and(...filters))
-  return allNotes
+  // const allNotes = await db.select().from(notes).where(and(...filters))
+
+  const sortColumn = filters.sortBy === "title"
+  ? notes.title
+  : filters.sortBy === "updatedAt"
+  ? notes.updatedAt
+  : notes.createdAt
+
+  const sortOrder = filters.order === "asc" ? asc(sortColumn) : desc(sortColumn);
+
+  const data = await db
+    .select()
+    .from(notes)
+    .where(and(...conditions))
+    .limit(limit)
+    .offset(offset)
+    .orderBy(sortOrder);
+
+  const countResult  = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(notes)
+    .where(and(...conditions));
+
+    const total = Number(countResult[0]?.count ?? 0)
+  return {
+    data,
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(Number(total) / limit),
+    },
+  };
 }
 
 export const getNotesById = async (userId: string, noteId: string) => {
@@ -37,7 +73,19 @@ export const updateNoteById = async (userId: string, noteId: string, title: stri
   return updateNote
 }
 
-export const deleteNoteById = async(userId: string, noteId: string) => {
+export const deleteNoteById = async (userId: string, noteId: string) => {
   const deleteNote = await db.delete(notes).where(and(eq(notes.userId, userId), eq(notes.id, noteId))).returning()
   return deleteNote
+}
+
+
+export const getNoteAudio = async(noteId: string, userId: string) => {
+  const note = await db.select().from(notes).where(and(eq(notes.id, noteId), eq(notes.userId, userId))).limit(1)
+
+  if (note.length === 0) {
+    return null
+  }
+
+  const audioFiles = await db.select().from(audioFile).where(eq(audioFile.noteId, noteId)).orderBy(desc(audioFile.createdAt))
+  return audioFiles;
 }
