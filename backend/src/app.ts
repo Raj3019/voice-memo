@@ -7,8 +7,9 @@ import categoryRouter from './routes/categories.route.ts';
 
 const app = express()
 
-app.use(express.json())
 app.all("/api/auth/*splat", toNodeHandler(auth));
+
+app.use(express.json())
 app.use('/api/notes', notesRouter)
 app.use('/api/category', categoryRouter)
 
