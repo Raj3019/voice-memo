@@ -1,21 +1,57 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Search, Zap } from "lucide-react"
 
 import { MobileBottomNav } from "@/components/mobile-bottom-nav"
 import { NoteListCard } from "@/components/note-list-card"
 import { Input } from "@/components/ui/input"
-import { mockNotes } from "@/lib/mock-notes"
-
-const searchResults = mockNotes.filter(
-  (note) => note.id === "react-query-caching" || note.id === "lex-consciousness"
-)
+import { Skeleton } from "@/components/ui/skeleton"
+import { getCategories } from "@/lib/api/categories"
+import { searchNotes } from "@/lib/api/notes"
+import { useRequireSession } from "@/lib/hooks/use-require-session"
+import type { Note, SearchMode } from "@/lib/types"
 
 export default function SearchPage() {
-  const [mode, setMode] = useState("text")
+  useRequireSession()
+
+  const [mode, setMode] = useState<SearchMode>("text")
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<Note[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+
   const semanticEnabled = mode === "semantic"
+
+  useEffect(() => {
+    const trimmed = query.trim()
+    if (!trimmed) {
+      setResults([])
+      setError("")
+      return
+    }
+
+    const timer = setTimeout(() => {
+      setLoading(true)
+      setError("")
+
+      void (async () => {
+        try {
+          const categories = await getCategories()
+          const data = await searchNotes(trimmed, mode, categories)
+          setResults(data)
+        } catch (err) {
+          const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Search failed"
+          setError(message)
+        } finally {
+          setLoading(false)
+        }
+      })()
+    }, 400)
+
+    return () => clearTimeout(timer)
+  }, [mode, query])
 
   return (
     <main className="min-h-screen bg-[#D9D6CF] dark:bg-[#060A14]">
@@ -28,11 +64,13 @@ export default function SearchPage() {
             <Input
               className="h-11 rounded-2xl border-[#D7D4CC] bg-[#EFEEE9] pl-10 text-sm placeholder:text-[#A7AAC4] dark:border-input dark:bg-[#161D30]"
               placeholder="Search notes..."
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
             />
           </div>
 
           <div className="flex rounded-xl bg-[#E2E0DB] p-1 dark:bg-[#161D30]">
-            {["text", "semantic"].map((tab) => (
+            {(["text", "semantic"] as const).map((tab) => (
               <button
                 key={tab}
                 className={`flex-1 rounded-lg py-2 text-sm transition-all ${
@@ -41,7 +79,7 @@ export default function SearchPage() {
                 onClick={() => setMode(tab)}
                 type="button"
               >
-                {tab === "text" ? "🔤 Text" : "🧠 Semantic"}
+                {tab === "text" ? "Text" : "Semantic"}
               </button>
             ))}
           </div>
@@ -56,11 +94,21 @@ export default function SearchPage() {
           ) : null}
 
           <p className="text-xs font-semibold tracking-[0.12em] text-[#A1A4BF]">RESULTS</p>
-          {searchResults.map((result) => (
+
+          {loading ? (
+            <>
+              <Skeleton className="h-28 w-full rounded-3xl" />
+              <Skeleton className="h-28 w-full rounded-3xl" />
+              <Skeleton className="h-28 w-full rounded-3xl" />
+            </>
+          ) : null}
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
+          {results.map((result) => (
             <Link className="block" href={`/notes/${result.id}`} key={result.id}>
               <NoteListCard
                 dayLabel={result.dayLabel}
-                tag={result.tag}
+                tag={result.categoryName}
                 time={result.time}
                 title={result.title}
                 voice={result.voice}

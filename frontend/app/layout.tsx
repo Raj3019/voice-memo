@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import { Fraunces, DM_Sans } from "next/font/google"
 import "./globals.css"
-import { GlobalThemeToggle } from "@/components/global-theme-toggle"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
@@ -39,7 +38,6 @@ export default function RootLayout({
         >
           <TooltipProvider>
             {children}
-            <GlobalThemeToggle />
           </TooltipProvider>
         </ThemeProvider>
       </body>

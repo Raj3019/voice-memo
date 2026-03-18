@@ -1,26 +1,70 @@
+"use client"
+
 import Link from "next/link"
-import { notFound } from "next/navigation"
+import { useParams } from "next/navigation"
 import { ChevronLeft, Plus } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 
 import { MobileBottomNav } from "@/components/mobile-bottom-nav"
 import { NoteListCard } from "@/components/note-list-card"
 import { Button } from "@/components/ui/button"
-import { getCategoryBySlug } from "@/lib/mock-categories"
-import { mockNotes } from "@/lib/mock-notes"
+import { Skeleton } from "@/components/ui/skeleton"
+import { getCategories } from "@/lib/api/categories"
+import { getNotes } from "@/lib/api/notes"
+import { useRequireSession } from "@/lib/hooks/use-require-session"
+import type { Category } from "@/lib/types"
 
-type Props = {
-  params: Promise<{ slug: string }>
-}
+export default function CategoryNotesPage() {
+  const { loading: sessionLoading } = useRequireSession()
+  const params = useParams<{ slug: string }>()
+  const slug = useMemo(() => params?.slug || "", [params])
 
-export default async function CategoryNotesPage({ params }: Props) {
-  const { slug } = await params
-  const category = getCategoryBySlug(slug)
+  const [category, setCategory] = useState<Category | null>(null)
+  const [notes, setNotes] = useState<Awaited<ReturnType<typeof getNotes>>["data"]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
 
-  if (!category) {
-    notFound()
-  }
+  useEffect(() => {
+    let active = true
 
-  const categoryNotes = mockNotes.filter((note) => note.tag.toLowerCase() === category.name.toLowerCase())
+    async function load() {
+      try {
+        const allCategories = await getCategories()
+        const matched = allCategories.find((item) => item.slug === slug)
+
+        if (!active) return
+
+        if (!matched) {
+          setError("Category not found")
+          setCategory(null)
+          setNotes([])
+          return
+        }
+
+        setCategory(matched)
+
+        const result = await getNotes({ categoryId: matched.id, limit: 100 })
+        if (!active) return
+        setNotes(result.data)
+      } catch (err) {
+        if (!active) return
+        const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Failed to load category notes"
+        setError(message)
+      } finally {
+        if (active) {
+          setLoading(false)
+        }
+      }
+    }
+
+    if (!sessionLoading && slug) {
+      void load()
+    }
+
+    return () => {
+      active = false
+    }
+  }, [sessionLoading, slug])
 
   return (
     <main className="min-h-screen bg-[#D9D6CF] dark:bg-[#060A14]">
@@ -37,28 +81,47 @@ export default async function CategoryNotesPage({ params }: Props) {
             </Link>
           </div>
 
-          <h1 className="font-serif text-[1.8rem] font-bold text-[#0B0B34] dark:text-[#FFF4E8]">{category.name}</h1>
-          <p className="mt-1 text-sm text-[#9EA2C0]">{categoryNotes.length} notes</p>
+          {loading ? (
+            <>
+              <Skeleton className="h-10 w-40 rounded-md" />
+              <Skeleton className="mt-2 h-4 w-20 rounded-md" />
+            </>
+          ) : (
+            <>
+              <h1 className="font-serif text-[1.8rem] font-bold text-[#0B0B34] dark:text-[#FFF4E8]">{category?.name || "Category"}</h1>
+              <p className="mt-1 text-sm text-[#9EA2C0]">{notes.length} notes</p>
+            </>
+          )}
         </header>
 
         <div className="space-y-2.5 bg-[#EAE8E2] px-5 pb-24 pt-4 dark:bg-[#0B1220]">
-          {categoryNotes.length ? (
-            categoryNotes.map((note) => (
+          {loading ? (
+            <>
+              <Skeleton className="h-28 w-full rounded-3xl" />
+              <Skeleton className="h-28 w-full rounded-3xl" />
+              <Skeleton className="h-28 w-full rounded-3xl" />
+            </>
+          ) : null}
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {!loading && !error && notes.length ? (
+            notes.map((note) => (
               <Link className="block" href={`/notes/${note.id}`} key={note.id}>
                 <NoteListCard
                   dayLabel={note.dayLabel}
-                  tag={note.tag}
+                  tag={note.categoryName}
                   time={note.time}
                   title={note.title}
                   voice={note.voice}
                 />
               </Link>
             ))
-          ) : (
+          ) : null}
+
+          {!loading && !error && notes.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-border/80 bg-card/60 p-4 text-center text-sm text-[#9EA2C0]">
               No notes in this category yet. Tap + to create one.
             </div>
-          )}
+          ) : null}
         </div>
       </section>
 

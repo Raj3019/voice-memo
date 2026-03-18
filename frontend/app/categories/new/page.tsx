@@ -3,18 +3,36 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import type { FormEvent } from "react"
+import { useState } from "react"
 import { Plus, X } from "lucide-react"
 
+import { createCategory } from "@/lib/api/categories"
+import { useRequireSession } from "@/lib/hooks/use-require-session"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export default function NewCategoryPage() {
   const router = useRouter()
+  useRequireSession()
+  const [name, setName] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    router.push("/categories")
+    setSaving(true)
+    setError("")
+
+    try {
+      await createCategory(name)
+      router.push("/categories")
+    } catch (err) {
+      const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Failed to create category"
+      setError(message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -25,8 +43,8 @@ export default function NewCategoryPage() {
             <X className="size-4" /> Cancel
           </Link>
           <h1 className="text-base font-semibold text-[#0B0B34] dark:text-[#FFF4E8]">New Category</h1>
-          <Button className="h-9 rounded-full px-5 text-sm font-semibold text-white dark:text-white" size="sm" type="submit" form="new-category-form">
-            Save
+          <Button className="h-9 rounded-full px-5 text-sm font-semibold text-white dark:text-white" size="sm" type="submit" form="new-category-form" disabled={saving}>
+            {saving ? "Saving..." : "Save"}
           </Button>
         </header>
 
@@ -37,10 +55,14 @@ export default function NewCategoryPage() {
               className="h-12 rounded-2xl border-[#D7D4CC] bg-[#EFEEE9] text-base placeholder:text-[#9DA1BE] dark:border-input dark:bg-[#161D30]"
               placeholder="e.g. Meetings"
               required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
             />
           </div>
 
-          <Button className="h-12 w-full rounded-2xl border border-dashed border-primary/45 bg-primary/10 text-[15px] font-medium text-primary hover:bg-primary/15" type="button" variant="outline">
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
+          <Button className="h-12 w-full rounded-2xl border border-dashed border-primary/45 bg-primary/10 text-[15px] font-medium text-primary hover:bg-primary/15" type="submit" variant="outline" disabled={saving}>
             <Plus className="size-4" /> Add Category
           </Button>
         </form>

@@ -1,13 +1,17 @@
-"use client"
+﻿"use client"
 
 import Link from "next/link"
-import { Check, ChevronLeft, Mic, Trash2, Upload, Zap } from "lucide-react"
-import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { Check, ChevronLeft, Loader2, Mic, Trash2, Upload, Zap } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { getNoteStatus, uploadNoteAudio } from "@/lib/api/notes"
+import { useRequireSession } from "@/lib/hooks/use-require-session"
 
 type UploadState = "idle" | "recording" | "processing"
+type BackendStatus = "uploading" | "processing" | "completed"
 
 const bars = [30, 55, 40, 80, 60, 90, 45, 70, 85, 50, 65, 95, 55, 75, 40, 85, 60, 70, 50, 90, 65, 45, 80, 55, 40, 70, 55, 35]
 
@@ -22,7 +26,10 @@ function RecordingPulse() {
             width: `${80 + i * 30}px`,
             height: `${80 + i * 30}px`,
             opacity: 0.3 - i * 0.08,
-            animation: `pulse 2s ease-out infinite`,
+            animationName: "pulse",
+            animationDuration: "2s",
+            animationTimingFunction: "ease-out",
+            animationIterationCount: "infinite",
             animationDelay: `${i * 0.5}s`,
           }}
         />
@@ -41,7 +48,11 @@ function LiveWaveform() {
           style={{
             height: `${(h / 100) * 60}px`,
             opacity: 0.9,
-            animation: `wave ${0.8 + (i % 5) * 0.15}s ease-in-out infinite alternate`,
+            animationName: "wave",
+            animationDuration: `${0.8 + (i % 5) * 0.15}s`,
+            animationTimingFunction: "ease-in-out",
+            animationIterationCount: "infinite",
+            animationDirection: "alternate",
             animationDelay: `${i * 0.04}s`,
           }}
         />
@@ -50,8 +61,135 @@ function LiveWaveform() {
   )
 }
 
+function formatSeconds(seconds: number) {
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.max(0, Math.floor(seconds % 60))
+  return `${mins}:${secs.toString().padStart(2, "0")}`
+}
+
+async function getAudioDurationSeconds(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    const audio = document.createElement("audio")
+    const objectUrl = URL.createObjectURL(file)
+
+    audio.preload = "metadata"
+    audio.src = objectUrl
+
+    audio.onloadedmetadata = () => {
+      const value = Number.isFinite(audio.duration) ? Math.max(1, Math.round(audio.duration)) : 30
+      URL.revokeObjectURL(objectUrl)
+      resolve(value)
+    }
+
+    audio.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      resolve(30)
+    }
+  })
+}
+
 export default function VoiceMemoPage() {
+  useRequireSession()
+  const router = useRouter()
+
   const [state, setState] = useState<UploadState>("idle")
+  const [error, setError] = useState("")
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>("uploading")
+  const [uploadPercent, setUploadPercent] = useState(0)
+  const [processingPercent, setProcessingPercent] = useState(0)
+  const [audioDurationSeconds, setAudioDurationSeconds] = useState(30)
+  const [noteId, setNoteId] = useState("")
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const totalPercent = useMemo(() => {
+    if (backendStatus === "completed") return 100
+    if (backendStatus === "uploading") return Math.min(30, Math.max(5, Math.round(uploadPercent * 0.3)))
+    return Math.min(98, 30 + Math.round(processingPercent * 0.68))
+  }, [backendStatus, processingPercent, uploadPercent])
+
+  const currentStep = useMemo(() => {
+    if (backendStatus === "completed") return 2
+    if (backendStatus === "processing") return 1
+    return 0
+  }, [backendStatus])
+
+  const processingEta = useMemo(() => {
+    if (backendStatus !== "processing") return ""
+    const secondsTotal = Math.max(20, Math.min(180, Math.round(audioDurationSeconds * 2.2)))
+    const remaining = Math.max(0, Math.round(((100 - processingPercent) / 100) * secondsTotal))
+    return formatSeconds(remaining)
+  }, [audioDurationSeconds, backendStatus, processingPercent])
+
+  const handleUploadFile = async (file: File) => {
+    setError("")
+    setState("processing")
+    setBackendStatus("uploading")
+    setUploadPercent(0)
+    setProcessingPercent(0)
+    setNoteId("")
+
+    const duration = await getAudioDurationSeconds(file)
+    setAudioDurationSeconds(duration)
+
+    try {
+      const upload = await uploadNoteAudio(file, setUploadPercent)
+      setNoteId(upload.noteId)
+      setBackendStatus("processing")
+      setUploadPercent(100)
+    } catch (err) {
+      const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Audio upload failed"
+      setError(message)
+      setState("idle")
+    }
+  }
+
+  useEffect(() => {
+    if (state !== "processing" || backendStatus !== "processing") return
+
+    const baseSeconds = Math.max(25, Math.min(180, Math.round(audioDurationSeconds * 2.2)))
+    const step = Math.max(1, Math.round(100 / baseSeconds))
+
+    const timer = setInterval(() => {
+      setProcessingPercent((prev) => Math.min(95, prev + step))
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [audioDurationSeconds, backendStatus, state])
+
+  useEffect(() => {
+    if (!noteId || state !== "processing") return
+
+    let active = true
+    const interval = setInterval(async () => {
+      try {
+        const status = await getNoteStatus(noteId)
+        if (!active || !status) return
+
+        if (status === "completed") {
+          setBackendStatus("completed")
+          setProcessingPercent(100)
+          clearInterval(interval)
+
+          setTimeout(() => {
+            router.push(`/notes/${noteId}`)
+          }, 900)
+
+          return
+        }
+
+        if (status === "processing") {
+          setBackendStatus("processing")
+        }
+      } catch {
+        // Keep polling for transient errors.
+      }
+    }, 2500)
+
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [noteId, router, state])
 
   return (
     <main className="min-h-screen bg-[#D9D6CF] dark:bg-[#060A14]">
@@ -90,10 +228,24 @@ export default function VoiceMemoPage() {
                 <div className="h-px flex-1 bg-border" />
               </div>
 
+              <input
+                className="hidden"
+                type="file"
+                accept="audio/*"
+                ref={fileInputRef}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (!file) return
+                  void handleUploadFile(file)
+                  event.target.value = ""
+                }}
+              />
+
               <Button
                 className="h-12 w-full rounded-2xl bg-card text-base text-[#5D6180] hover:bg-card/90 dark:text-[#AAB0D2]"
                 type="button"
                 variant="outline"
+                onClick={() => fileInputRef.current?.click()}
               >
                 <Upload className="size-4" /> Upload audio file
               </Button>
@@ -106,11 +258,11 @@ export default function VoiceMemoPage() {
                 <LiveWaveform />
               </div>
 
-              <p className="mb-2 font-mono text-[40px] font-light tracking-[2px] text-[#1C1D3A] dark:text-[#E8E3DA]">0:42</p>
+              <p className="mb-2 font-mono text-[40px] font-light tracking-[2px] text-[#1C1D3A] dark:text-[#E8E3DA]">0:00</p>
 
               <div className="mb-10 flex items-center gap-2 text-sm text-[#9C9FBC]">
                 <span className="size-2 animate-pulse rounded-full bg-red-500" />
-                Recording
+                Recording preview only
               </div>
 
               <div className="flex items-center gap-6">
@@ -128,7 +280,7 @@ export default function VoiceMemoPage() {
                   className="size-[68px] rounded-full bg-red-500 text-white shadow-[0_8px_32px_rgba(220,80,80,0.35)] hover:bg-red-600"
                   size="icon"
                   type="button"
-                  onClick={() => setState("processing")}
+                  onClick={() => setState("idle")}
                 >
                   <span className="size-5 rounded-sm bg-white" />
                 </Button>
@@ -141,40 +293,42 @@ export default function VoiceMemoPage() {
           {state === "processing" ? (
             <div className="w-full text-center">
               <div className="mx-auto mb-6 flex size-[72px] items-center justify-center rounded-full border border-primary/35 bg-primary/10">
-                <Zap className="size-8 text-primary" />
+                {backendStatus === "completed" ? <Check className="size-8 text-primary" /> : <Zap className="size-8 text-primary" />}
               </div>
 
-              <h2 className="mb-2 font-serif text-[18px] font-semibold text-[#0B0B34] dark:text-[#FFF4E8]">AI is processing your memo...</h2>
-              <p className="mb-8 text-sm leading-relaxed text-[#5D6180] dark:text-[#AAB0D2]">
-                Transcribing -&gt; Generating title &amp; summary -&gt; Creating embeddings
+              <h2 className="mb-2 font-serif text-[18px] font-semibold text-[#0B0B34] dark:text-[#FFF4E8]">
+                {backendStatus === "completed" ? "Memo ready" : "AI is processing your memo..."}
+              </h2>
+              <p className="mb-2 text-sm leading-relaxed text-[#5D6180] dark:text-[#AAB0D2]">
+                {backendStatus === "uploading"
+                  ? `Uploading audio ${uploadPercent}%`
+                  : backendStatus === "processing"
+                    ? `Crafting your note ${totalPercent}%${processingEta ? ` • about ${processingEta} left` : ""}`
+                    : "Opening your processed note..."}
               </p>
+
+              <div className="mb-6 h-2 overflow-hidden rounded-full bg-border">
+                <div className="h-full rounded-full bg-primary transition-all duration-700" style={{ width: `${totalPercent}%` }} />
+              </div>
 
               <div className="space-y-2.5 text-left">
                 {[
-                  "Transcribing audio (Deepgram)",
-                  "Generating title & summary (Groq)",
-                  "Creating embeddings (Gemini)",
+                  "Listening to your voice memo",
+                  "Building title and summary",
+                  "Preparing your note for search",
                 ].map((step, i) => (
                   <Card key={step} className="gap-0 rounded-xl border-border/70 bg-card px-3.5 py-2.5">
                     <div className="flex items-center gap-2.5">
-                      <span
-                        className={`inline-flex size-[18px] items-center justify-center rounded-full ${
-                          i === 0 ? "bg-emerald-500" : i === 1 ? "bg-primary" : "bg-border"
-                        }`}
-                      >
-                        {i < 2 ? <Check className="size-3 text-white" /> : null}
+                      <span className={`inline-flex size-[18px] items-center justify-center rounded-full ${i < currentStep ? "bg-primary" : i === currentStep ? "bg-primary/20" : "bg-border"}`}>
+                        {i < currentStep ? <Check className="size-3 text-white" /> : i === currentStep ? <Loader2 className="size-3 animate-spin text-primary" /> : null}
                       </span>
-                      <span className={`text-sm ${i < 2 ? "text-[#1C1D3A] dark:text-[#E8E3DA]" : "text-[#9C9FBC]"}`}>{step}</span>
+                      <span className={`text-sm ${i <= currentStep ? "text-[#1C1D3A] dark:text-[#E8E3DA]" : "text-[#9C9FBC]"}`}>{step}</span>
                     </div>
                   </Card>
                 ))}
               </div>
 
-              <Link href="/notes/team-sync-q3">
-                <Button className="mt-8 h-10 rounded-xl border-border bg-card px-5 text-[13px] text-[#5D6180] dark:text-[#AAB0D2]" type="button" variant="outline">
-                  Continue in background
-                </Button>
-              </Link>
+              {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
             </div>
           ) : null}
         </div>
@@ -185,3 +339,5 @@ export default function VoiceMemoPage() {
     </main>
   )
 }
+
+

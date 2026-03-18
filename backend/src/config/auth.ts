@@ -7,8 +7,9 @@ import * as schema from "../db/schema.ts"
 import * as authSchema from "../auth-schema.ts"
 
 export const auth = betterAuth({
-  baseURL: "http://localhost:3000",
+  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
   basePath: "/api/auth",
+  trustedOrigins: [process.env.FRONTEND_URL || "http://localhost:3001"],
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: {
@@ -18,7 +19,7 @@ export const auth = betterAuth({
   }),
   secret: process.env.BETTER_AUTH_SECRET!,
   emailAndPassword: {
-    enabled: true
+    enabled: false
   },
   socialProviders:{
     google: {
@@ -28,16 +29,28 @@ export const auth = betterAuth({
   },
   hooks: {
     after: createAuthMiddleware(async (ctx) => {
-      if(ctx.path.startsWith("/sign-up")) {
-        const newSession = ctx.context.newSession
-        if(newSession) {
-          await db.insert(users).values({
+      const newSession = ctx.context.newSession
+      if (newSession?.user) {
+        const nameFallback =
+          newSession.user.name ||
+          newSession.user.email.split("@")[0] ||
+          "User";
+
+        await db
+          .insert(users)
+          .values({
             id: newSession.user.id,
-            fullName: newSession.user.name,
-            email: newSession.user.email
+            fullName: nameFallback,
+            email: newSession.user.email,
           })
-        }
+          .onConflictDoUpdate({
+            target: users.id,
+            set: {
+              fullName: nameFallback,
+              email: newSession.user.email,
+            },
+          });
       }
-    })
+    }),
   }
 })

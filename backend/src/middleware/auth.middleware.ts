@@ -1,5 +1,7 @@
 import type { NextFunction, Request, Response } from "express"
 import { auth } from "../config/auth.ts"
+import { db } from "../db/index.ts"
+import { users } from "../db/schema.ts"
 
 declare global {
   namespace Express {
@@ -17,6 +19,24 @@ export const authMiddleware = async(req: Request, res: Response, next: NextFunct
   if(!session){
     return res.status(401).json({message: "Session is not valid"})
   }
+
+  const nameFallback =
+    session.user.name || session.user.email.split("@")[0] || "User";
+
+  await db
+    .insert(users)
+    .values({
+      id: session.user.id,
+      fullName: nameFallback,
+      email: session.user.email,
+    })
+    .onConflictDoUpdate({
+      target: users.id,
+      set: {
+        fullName: nameFallback,
+        email: session.user.email,
+      },
+    });
 
   req.user = session.user
   next()

@@ -1,27 +1,34 @@
 "use client"
 
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import type { FormEvent } from "react"
-import { ChevronLeft, Lock, Mail, UserRound } from "lucide-react"
+import { useState } from "react"
+import { ChevronLeft, Chrome } from "lucide-react"
 
+import { signInWithGoogle } from "@/lib/api/auth"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-
-const fields = [
-  { label: "FULL NAME", placeholder: "Full Name", type: "text", icon: UserRound },
-  { label: "EMAIL", placeholder: "Email", type: "email", icon: Mail },
-  { label: "PASSWORD", placeholder: "Password", type: "password", icon: Lock },
-  { label: "CONFIRM PASSWORD", placeholder: "Confirm Password", type: "password", icon: Lock },
-]
 
 export default function SignUpPage() {
-  const router = useRouter()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    router.push("/notes")
+  const handleGoogleSignup = async () => {
+    setLoading(true)
+    setError("")
+
+    try {
+      const callbackURL = `${window.location.origin}/notes`
+      const response = await signInWithGoogle(callbackURL)
+
+      if (!response.url) {
+        throw new Error("Google sign-up URL not returned by auth server")
+      }
+
+      window.location.href = response.url
+    } catch (err) {
+      const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Google sign-up failed"
+      setError(message)
+      setLoading(false)
+    }
   }
 
   return (
@@ -33,33 +40,23 @@ export default function SignUpPage() {
 
         <header className="mb-8">
           <h1 className="font-serif text-[1.75rem] font-bold tracking-[-0.02em] text-[#0B0B34] dark:text-[#FFF4E8]">Create account</h1>
-          <p className="mt-1.5 text-sm text-[#4D5170] dark:text-[#AAB0D2]">Start capturing your thoughts today</p>
+          <p className="mt-1.5 text-sm text-[#4D5170] dark:text-[#AAB0D2]">Sign up with Google to start using Voco</p>
         </header>
 
-        <form className="space-y-3.5" onSubmit={handleSubmit}>
-          {fields.map((field) => {
-            const Icon = field.icon
-            return (
-              <div key={field.label}>
-                <Label className="mb-2 block text-xs font-semibold tracking-[0.08em] text-[#A2A4C2]">{field.label}</Label>
-                <div className="flex items-center gap-2.5 rounded-[14px] border border-[#D9D5CE] bg-[#EFEEE9] px-4 py-3.5 dark:border-input dark:bg-[#1A1C34]">
-                  <Icon className="size-[17px] text-[#9FA3C1]" />
-                  <Input
-                    className="h-auto border-0 bg-transparent p-0 text-[15px] shadow-none focus-visible:ring-0"
-                    placeholder={field.placeholder}
-                    type={field.type}
-                  />
-                </div>
-              </div>
-            )
-          })}
+        {/* Manual name/email/password signup intentionally disabled for now. */}
 
-          <div className="pt-2">
-            <Button className="h-14 w-full rounded-2xl text-base font-semibold" size="lg" type="submit">
-              Create Account
-            </Button>
-          </div>
-        </form>
+        <Button
+          className="h-14 w-full rounded-2xl border border-border bg-white/70 text-base font-semibold text-foreground dark:bg-[#1A1C34]"
+          size="lg"
+          type="button"
+          variant="outline"
+          onClick={handleGoogleSignup}
+          disabled={loading}
+        >
+          <Chrome className="size-[17px]" /> {loading ? "Redirecting..." : "Continue with Google"}
+        </Button>
+
+        {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
 
         <p className="mt-6 text-center text-sm text-[#4D5170] dark:text-[#AAB0D2]">
           Already have an account?{" "}
