@@ -8,11 +8,19 @@ export type ApiError = {
 
 export type NoteStatus = "uploading" | "processing" | "completed" | string;
 
+export type TranscriptToken = {
+  text: string;
+  start: number;
+  end: number;
+};
+
 export type Note = {
   id: string;
+  slug: string;
   title: string;
   description: string;
   transcript: string;
+  transcriptTimestamps?: TranscriptToken[];
   status: NoteStatus;
   categoryId: string | null;
   categoryName: string;

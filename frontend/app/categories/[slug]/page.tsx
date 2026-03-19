@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { getCategories } from "@/lib/api/categories"
 import { getNotes } from "@/lib/api/notes"
 import { useRequireSession } from "@/lib/hooks/use-require-session"
+import { buildNotePath } from "@/lib/note-route"
 import type { Category } from "@/lib/types"
 
 export default function CategoryNotesPage() {
@@ -105,7 +106,7 @@ export default function CategoryNotesPage() {
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           {!loading && !error && notes.length ? (
             notes.map((note) => (
-              <Link className="block" href={`/notes/${note.id}`} key={note.id}>
+              <Link className="block" href={buildNotePath(note.slug)} key={note.id}>
                 <NoteListCard
                   dayLabel={note.dayLabel}
                   tag={note.categoryName}

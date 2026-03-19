@@ -2,19 +2,37 @@ import { apiClient } from "@/lib/api/client";
 import type { AxiosProgressEvent } from "axios";
 import { formatDayLabel, formatDuration } from "@/lib/api/utils";
 import { getCategories } from "@/lib/api/categories";
-import type { AudioFile, Category, Note, PaginatedNotes, SearchMode } from "@/lib/types";
+import type { AudioFile, Category, Note, PaginatedNotes, SearchMode, TranscriptToken } from "@/lib/types";
 
 type NoteRow = {
   id: string;
+  publicSlug?: string | null;
   userId: string;
   categoryId: string | null;
   title: string | null;
   description: string | null;
   transcript: string | null;
+  transcriptTimestamps?: unknown;
   status: string;
   createdAt: string;
   updatedAt: string | null;
 };
+
+function normalizeTranscriptTokens(value: unknown): TranscriptToken[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      const text = typeof record.text === "string" ? record.text.trim() : "";
+      const start = Number(record.start);
+      const end = Number(record.end);
+      if (!text || !Number.isFinite(start) || !Number.isFinite(end)) return null;
+      return { text, start, end };
+    })
+    .filter((item): item is TranscriptToken => Boolean(item));
+}
 
 type NotesResponse = {
   data: NoteRow[];
@@ -62,12 +80,15 @@ function buildCategoryMap(categories: Category[]): CategoryMap {
 
 function normalizeNote(row: NoteRow, categoryMap: CategoryMap, audioDuration?: number): Note {
   const categoryName = row.categoryId ? categoryMap[row.categoryId] || "Uncategorized" : "Uncategorized";
+  const transcriptTimestamps = normalizeTranscriptTokens(row.transcriptTimestamps);
 
   return {
     id: row.id,
+    slug: row.publicSlug || row.id,
     title: row.title || "Untitled note",
     description: row.description || "",
     transcript: row.transcript || "",
+    transcriptTimestamps,
     status: row.status,
     categoryId: row.categoryId,
     categoryName,
@@ -189,7 +210,7 @@ export async function uploadNoteAudio(
   const formData = new FormData();
   formData.append("audio", file);
 
-  const { data } = await apiClient.post<{ noteId: string; audioUrl: string }>("/api/notes/upload", formData, {
+  const { data } = await apiClient.post<{ noteId: string; noteSlug?: string; audioUrl: string }>("/api/notes/upload", formData, {
     headers: {
       "Content-Type": "multipart/form-data",
     },

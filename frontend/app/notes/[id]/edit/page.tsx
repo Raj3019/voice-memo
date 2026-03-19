@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { getCategories } from "@/lib/api/categories"
 import { getNoteById, updateNote } from "@/lib/api/notes"
 import { useRequireSession } from "@/lib/hooks/use-require-session"
+import { buildNotePath } from "@/lib/note-route"
 import type { Category } from "@/lib/types"
 
 export default function EditNotePage() {
@@ -29,6 +30,7 @@ export default function EditNotePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const [noteSlug, setNoteSlug] = useState(noteId)
 
   useEffect(() => {
     let active = true
@@ -49,6 +51,7 @@ export default function EditNotePage() {
         setTitle(detail.note.title)
         setDescription(detail.note.description)
         setCategoryId(detail.note.categoryId || undefined)
+        setNoteSlug(detail.note.slug)
       } catch (err) {
         if (!active) return
         const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Failed to load note"
@@ -74,7 +77,7 @@ export default function EditNotePage() {
     setError("")
     try {
       await updateNote(noteId, { title, description, categoryId })
-      router.push(`/notes/${noteId}`)
+      router.push(buildNotePath(noteSlug))
     } catch (err) {
       const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Failed to update note"
       setError(message)
@@ -106,7 +109,7 @@ export default function EditNotePage() {
     <main className="min-h-screen bg-[#D9D6CF] dark:bg-[#060A14]">
       <section className="mx-auto min-h-screen w-full max-w-sm bg-[#EAE8E2] dark:bg-[#0B1220]">
         <header className="flex items-center justify-between border-b border-border/60 bg-[#F6F5F2] px-5 py-4 dark:bg-[#101522]">
-          <Link className="inline-flex items-center gap-1 text-base text-[#656A88]" href={`/notes/${noteId}`}>
+          <Link className="inline-flex items-center gap-1 text-base text-[#656A88]" href={buildNotePath(noteSlug)}>
             <X className="size-4" /> Cancel
           </Link>
           <h1 className="font-serif text-xl font-bold text-[#0B0B34] dark:text-[#FFF4E8]">Edit Note</h1>

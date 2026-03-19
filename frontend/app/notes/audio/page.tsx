@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { getNoteStatus, uploadNoteAudio } from "@/lib/api/notes"
 import { useRequireSession } from "@/lib/hooks/use-require-session"
+import { buildNotePath } from "@/lib/note-route"
 
 type UploadState = "idle" | "recording" | "processing"
 type BackendStatus = "uploading" | "processing" | "completed"
@@ -61,12 +62,6 @@ function LiveWaveform() {
   )
 }
 
-function formatSeconds(seconds: number) {
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.max(0, Math.floor(seconds % 60))
-  return `${mins}:${secs.toString().padStart(2, "0")}`
-}
-
 async function getAudioDurationSeconds(file: File): Promise<number> {
   return new Promise((resolve) => {
     const audio = document.createElement("audio")
@@ -113,13 +108,6 @@ export default function VoiceMemoPage() {
     return 0
   }, [backendStatus])
 
-  const processingEta = useMemo(() => {
-    if (backendStatus !== "processing") return ""
-    const secondsTotal = Math.max(20, Math.min(180, Math.round(audioDurationSeconds * 2.2)))
-    const remaining = Math.max(0, Math.round(((100 - processingPercent) / 100) * secondsTotal))
-    return formatSeconds(remaining)
-  }, [audioDurationSeconds, backendStatus, processingPercent])
-
   const handleUploadFile = async (file: File) => {
     setError("")
     setState("processing")
@@ -133,7 +121,7 @@ export default function VoiceMemoPage() {
 
     try {
       const upload = await uploadNoteAudio(file, setUploadPercent)
-      setNoteId(upload.noteId)
+      setNoteId(upload.noteSlug || upload.noteId)
       setBackendStatus("processing")
       setUploadPercent(100)
     } catch (err) {
@@ -171,7 +159,7 @@ export default function VoiceMemoPage() {
           clearInterval(interval)
 
           setTimeout(() => {
-            router.push(`/notes/${noteId}`)
+            router.push(buildNotePath(noteId))
           }, 900)
 
           return
@@ -303,7 +291,7 @@ export default function VoiceMemoPage() {
                 {backendStatus === "uploading"
                   ? `Uploading audio ${uploadPercent}%`
                   : backendStatus === "processing"
-                    ? `Crafting your note ${totalPercent}%${processingEta ? ` • about ${processingEta} left` : ""}`
+                    ? `Crafting your note ${totalPercent}%`
                     : "Opening your processed note..."}
               </p>
 

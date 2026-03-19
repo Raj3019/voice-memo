@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { getCategories } from "@/lib/api/categories"
 import { deleteNote, getNoteById } from "@/lib/api/notes"
 import { useRequireSession } from "@/lib/hooks/use-require-session"
+import { buildEditNotePath } from "@/lib/note-route"
 import type { AudioFile, Note } from "@/lib/types"
 
 export default function NoteDetailPage() {
@@ -26,6 +27,22 @@ export default function NoteDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [deleting, setDeleting] = useState(false)
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0)
+  const [audioPlaying, setAudioPlaying] = useState(false)
+  const hasAudio = Boolean(audioFiles[0]?.url)
+  const transcriptTokens = useMemo(() => note?.transcriptTimestamps || [], [note])
+  const shouldSyncTranscript = hasAudio && audioPlaying && transcriptTokens.length > 0
+  const activeTokenIndex = useMemo(() => {
+    if (!shouldSyncTranscript) return -1
+    return transcriptTokens.findIndex((token) => audioCurrentTime >= token.start && audioCurrentTime <= token.end)
+  }, [audioCurrentTime, shouldSyncTranscript, transcriptTokens])
+
+  useEffect(() => {
+    if (!hasAudio) {
+      setAudioPlaying(false)
+      setAudioCurrentTime(0)
+    }
+  }, [hasAudio])
 
   useEffect(() => {
     let active = true
@@ -120,7 +137,7 @@ export default function NoteDetailPage() {
               <ChevronLeft className="size-4" /> Notes
             </Link>
             <div className="flex items-center gap-2">
-              <Link href={`/notes/${note.id}/edit`}>
+              <Link href={buildEditNotePath(note.slug)}>
                 <Button className="size-9 rounded-xl border border-border bg-card text-[#7E829F]" size="icon" variant="outline">
                   <SquarePen className="size-4" strokeWidth={1.8} />
                 </Button>
@@ -142,7 +159,14 @@ export default function NoteDetailPage() {
         </header>
 
         <div className="space-y-4 px-5 pb-24 pt-5">
-          {audioFiles[0] ? <NoteAudioPlayer duration={duration || "0:00"} audioUrl={audioFiles[0].url} /> : null}
+          {audioFiles[0] ? (
+            <NoteAudioPlayer
+              duration={duration || "0:00"}
+              audioUrl={audioFiles[0].url}
+              onTimeUpdate={setAudioCurrentTime}
+              onPlayStateChange={setAudioPlaying}
+            />
+          ) : null}
 
           <div className="rounded-3xl border border-primary/25 bg-primary/7 p-4">
             <p className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold tracking-[0.08em] text-primary">
@@ -153,9 +177,29 @@ export default function NoteDetailPage() {
 
           <div>
             <p className="mb-2 text-sm font-semibold tracking-[0.08em] text-[#A1A4BF]">TRANSCRIPT</p>
-            <p className="text-[0.95rem] leading-[1.8] text-[#1C1D3A] dark:text-[#E8E3DA]">
-              {note.transcript || "No transcript available yet."}
-            </p>
+            {transcriptTokens.length > 0 ? (
+              <div
+                className="text-[0.95rem] leading-[1.8] text-[#1C1D3A] dark:text-[#E8E3DA]"
+              >
+                {transcriptTokens.map((token, index) => {
+                  const isActive = shouldSyncTranscript && activeTokenIndex === index
+                  return (
+                    <span
+                      key={`${token.start}-${index}`}
+                      className={`rounded px-[2px] transition-colors duration-150 ${
+                        isActive ? "bg-primary/20 text-primary" : ""
+                      }`}
+                    >
+                      {token.text}{" "}
+                    </span>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="text-[0.95rem] leading-[1.8] text-[#1C1D3A] dark:text-[#E8E3DA]">
+                {note.transcript || "No transcript available yet."}
+              </p>
+            )}
           </div>
 
           {error ? <p className="text-sm text-red-600">{error}</p> : null}

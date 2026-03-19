@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { getCategories } from "@/lib/api/categories"
 import { searchNotes } from "@/lib/api/notes"
 import { useRequireSession } from "@/lib/hooks/use-require-session"
+import { buildNotePath } from "@/lib/note-route"
 import type { Note, SearchMode } from "@/lib/types"
 
 export default function SearchPage() {
@@ -105,7 +106,7 @@ export default function SearchPage() {
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
           {results.map((result) => (
-            <Link className="block" href={`/notes/${result.id}`} key={result.id}>
+            <Link className="block" href={buildNotePath(result.slug)} key={result.id}>
               <NoteListCard
                 dayLabel={result.dayLabel}
                 tag={result.categoryName}

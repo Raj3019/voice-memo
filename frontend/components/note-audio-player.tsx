@@ -9,6 +9,8 @@ import { Card } from "@/components/ui/card"
 type NoteAudioPlayerProps = {
   duration: string
   audioUrl?: string
+  onTimeUpdate?: (seconds: number) => void
+  onPlayStateChange?: (playing: boolean) => void
 }
 
 const baseBars = [30, 55, 40, 80, 60, 90, 45, 70, 85, 50, 65, 95, 55, 75, 40, 85, 60, 70, 50, 90, 65, 45, 80, 55]
@@ -24,11 +26,12 @@ function parseDurationLabel(label: string): number {
   return mins * 60 + secs
 }
 
-export function NoteAudioPlayer({ duration, audioUrl }: NoteAudioPlayerProps) {
+export function NoteAudioPlayer({ duration, audioUrl, onTimeUpdate, onPlayStateChange }: NoteAudioPlayerProps) {
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [totalTime, setTotalTime] = useState(parseDurationLabel(duration))
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const progressTrackRef = useRef<HTMLDivElement | null>(null)
   const waveformBars = useMemo(() => Array.from({ length: 40 }, (_, i) => baseBars[i % baseBars.length]), [])
 
   useEffect(() => {
@@ -47,12 +50,15 @@ export function NoteAudioPlayer({ duration, audioUrl }: NoteAudioPlayerProps) {
 
     const handleTimeUpdate = () => {
       setCurrentTime(audio.currentTime)
+      onTimeUpdate?.(audio.currentTime)
     }
 
     const handleEnded = () => {
       setPlaying(false)
       setCurrentTime(0)
       audio.currentTime = 0
+      onPlayStateChange?.(false)
+      onTimeUpdate?.(0)
     }
 
     audio.addEventListener("loadedmetadata", handleLoaded)
@@ -66,7 +72,7 @@ export function NoteAudioPlayer({ duration, audioUrl }: NoteAudioPlayerProps) {
       audio.removeEventListener("ended", handleEnded)
       audioRef.current = null
     }
-  }, [audioUrl])
+  }, [audioUrl, onPlayStateChange, onTimeUpdate])
 
   const togglePlay = () => {
     const audio = audioRef.current
@@ -78,11 +84,13 @@ export function NoteAudioPlayer({ duration, audioUrl }: NoteAudioPlayerProps) {
     if (audio.paused) {
       void audio.play()
       setPlaying(true)
+      onPlayStateChange?.(true)
       return
     }
 
     audio.pause()
     setPlaying(false)
+    onPlayStateChange?.(false)
   }
 
   const progress = useMemo(() => {
@@ -97,6 +105,20 @@ export function NoteAudioPlayer({ duration, audioUrl }: NoteAudioPlayerProps) {
 
     return duration || "0:00"
   }, [audioUrl, currentTime, duration, totalTime])
+
+  const seekToPosition = (clientX: number) => {
+    const track = progressTrackRef.current
+    const audio = audioRef.current
+    if (!track || !audio || totalTime <= 0) return
+
+    const rect = track.getBoundingClientRect()
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    const nextTime = ratio * totalTime
+
+    audio.currentTime = nextTime
+    setCurrentTime(nextTime)
+    onTimeUpdate?.(nextTime)
+  }
 
   return (
     <Card className="gap-0 rounded-3xl border-border/70 bg-card p-4 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
@@ -132,7 +154,11 @@ export function NoteAudioPlayer({ duration, audioUrl }: NoteAudioPlayerProps) {
         <span className="shrink-0 text-xs text-[#9EA2C0]">{displayDuration}</span>
       </div>
 
-      <div className="h-[3px] overflow-hidden rounded-full bg-border">
+      <div
+        ref={progressTrackRef}
+        className="h-[3px] cursor-pointer overflow-hidden rounded-full bg-border"
+        onClick={(event) => seekToPosition(event.clientX)}
+      >
         <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
       </div>
 
