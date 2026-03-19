@@ -12,6 +12,7 @@ import { compressAudio } from "../utils/compressAudio.ts";
 import { uploadToCloudinary } from "../utils/uploadToCloudinary.ts";
 import { eq } from "drizzle-orm";
 import { addTranscriptionJob } from "../queues/transcription.queue.ts";
+import { generateUniquePublicSlug } from "../utils/publicSlug.ts";
 
 
 export const createNote = async (req: Request, res: Response) => {
@@ -148,10 +149,12 @@ export const uploadAudio = async (req: Request, res: Response) => {
     }
 
     const userId = req.user!.id // from middleware
+    const publicSlug = await generateUniquePublicSlug(userId, "voice-note")
 
     //2. create note in db first (status: 'uploading')
     const [note] = await db.insert(notes).values({
       userId,
+      publicSlug,
       status: 'uploading',
     }).returning();
 
@@ -206,6 +209,7 @@ export const uploadAudio = async (req: Request, res: Response) => {
     return res.status(201).json({
       message: 'Audio uploaded successfully, transcription in progress',
       noteId: note.id,
+      noteSlug: note.publicSlug,
       audioUrl,
       createdAt: note.createdAt
     });

@@ -1,4 +1,10 @@
-import { uuid, text, unique, timestamp, pgTable, varchar, integer, vector } from "drizzle-orm/pg-core"
+import { uuid, text, unique, timestamp, pgTable, varchar, integer, vector, jsonb } from "drizzle-orm/pg-core"
+
+type TranscriptTimestamp = {
+  text: string
+  start: number
+  end: number
+}
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -20,15 +26,19 @@ export const categories = pgTable('categories', {
 export const notes = pgTable('notes', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  publicSlug: text('public_slug').notNull(),
   categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }),
   title: text('title'),
   description: text('description'),
   transcript: text('transcript'),
+  transcriptTimestamps: jsonb('transcript_timestamps').$type<TranscriptTimestamp[]>(),
   status: text('status').notNull().default('uploading'),
   embedding: vector('embedding', {dimensions: 768 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdateFn(() => new Date())
-})
+}, (table) => [
+  unique().on(table.userId, table.publicSlug),
+])
 
 export const audioFile = pgTable('audio_files', {
   id: uuid('id').defaultRandom().primaryKey(),

@@ -18,8 +18,11 @@ const transcriptionWorker = new Worker('transcription', async(job) => {
 
   // 1. Transcribe the audio — critical step, retry if fails
   let transcript: string;
+  let transcriptTimestamps: { text: string; start: number; end: number }[] = [];
   try {
-    transcript = await transcribeAudio(audioFile);
+    const transcription = await transcribeAudio(audioFile);
+    transcript = transcription.transcript;
+    transcriptTimestamps = transcription.timestamps;
     console.log('📝 Transcript received:', transcript.slice(0, 100) + '...');
   } catch (err) {
     console.error('❌ Transcription failed:', err);
@@ -60,6 +63,7 @@ const transcriptionWorker = new Worker('transcription', async(job) => {
   await db.update(notes)
     .set({
       transcript,
+      transcriptTimestamps,
       title,
       description,
       embedding,

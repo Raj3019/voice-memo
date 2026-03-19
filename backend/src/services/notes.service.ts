@@ -2,6 +2,16 @@ import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { audioFile, categories, notes } from "../db/schema.ts";
 import { generateEmbedding } from "../utils/generateEmbedding.ts";
+import { generateUniquePublicSlug } from "../utils/publicSlug.ts";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function byNoteIdentifier(noteIdentifier: string) {
+  if (UUID_RE.test(noteIdentifier)) {
+    return or(eq(notes.id, noteIdentifier), eq(notes.publicSlug, noteIdentifier));
+  }
+  return eq(notes.publicSlug, noteIdentifier);
+}
 
 export const createNote = async (userId: string, title: string, description: string, categoryId?: string) => {
   if (categoryId) {
@@ -13,7 +23,15 @@ export const createNote = async (userId: string, title: string, description: str
       throw new Error("Category not found or doesn't belong to you")
     }
   }
-  const note = await db.insert(notes).values({ userId, title, description, categoryId, status: "completed" }).returning()
+  const publicSlug = await generateUniquePublicSlug(userId, title)
+  const note = await db.insert(notes).values({
+    userId,
+    publicSlug,
+    title,
+    description,
+    categoryId,
+    status: "completed",
+  }).returning()
   return note[0]
 }
 
@@ -66,29 +84,67 @@ export const getNotes = async (userId: string, filters: {
   };
 }
 
-export const getNotesById = async (userId: string, noteId: string) => {
-  const getNote = await db.select().from(notes).where(and(eq(notes.userId, userId), eq(notes.id, noteId)))
+export const getNotesById = async (userId: string, noteIdentifier: string) => {
+  const getNote = await db
+    .select()
+    .from(notes)
+    .where(
+      and(
+        eq(notes.userId, userId),
+        byNoteIdentifier(noteIdentifier)
+      )
+    )
   return getNote
 }
 
-export const updateNoteById = async (userId: string, noteId: string, title: string, description: string, categoryId?: string) => {
-  const updateNote = await db.update(notes).set({ title, description, categoryId }).where(and(eq(notes.id, noteId), eq(notes.userId, userId))).returning()
+export const updateNoteById = async (userId: string, noteIdentifier: string, title: string, description: string, categoryId?: string) => {
+  const updateNote = await db
+    .update(notes)
+    .set({ title, description, categoryId })
+    .where(
+      and(
+        eq(notes.userId, userId),
+        byNoteIdentifier(noteIdentifier)
+      )
+    )
+    .returning()
   return updateNote
 }
 
-export const deleteNoteById = async (userId: string, noteId: string) => {
-  const deleteNote = await db.delete(notes).where(and(eq(notes.userId, userId), eq(notes.id, noteId))).returning()
+export const deleteNoteById = async (userId: string, noteIdentifier: string) => {
+  const deleteNote = await db
+    .delete(notes)
+    .where(
+      and(
+        eq(notes.userId, userId),
+        byNoteIdentifier(noteIdentifier)
+      )
+    )
+    .returning()
   return deleteNote
 }
 
-export const getNoteAudio = async (noteId: string, userId: string) => {
-  const note = await db.select().from(notes).where(and(eq(notes.id, noteId), eq(notes.userId, userId))).limit(1)
+export const getNoteAudio = async (noteIdentifier: string, userId: string) => {
+  const note = await db
+    .select()
+    .from(notes)
+    .where(
+      and(
+        eq(notes.userId, userId),
+        byNoteIdentifier(noteIdentifier)
+      )
+    )
+    .limit(1)
 
   if (note.length === 0) {
     return null
   }
 
-  const audioFiles = await db.select().from(audioFile).where(eq(audioFile.noteId, noteId)).orderBy(desc(audioFile.createdAt))
+  const audioFiles = await db
+    .select()
+    .from(audioFile)
+    .where(eq(audioFile.noteId, note[0]!.id))
+    .orderBy(desc(audioFile.createdAt))
   return audioFiles;
 }
 
