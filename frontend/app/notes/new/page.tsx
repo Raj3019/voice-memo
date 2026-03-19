@@ -33,9 +33,6 @@ export default function NewNotePage() {
         const data = await getCategories()
         if (!active) return
         setCategories(data)
-        if (data[0]) {
-          setSelectedCategoryId(data[0].id)
-        }
       } catch (err) {
         if (!active) return
         const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Failed to load categories"
@@ -101,11 +98,16 @@ export default function NewNotePage() {
               {categories.map((category) => (
                 <button
                   key={category.id}
-                  className={`rounded-full px-[14px] py-[6px] text-[13px] ${
-                    selectedCategoryId === category.id ? "bg-primary font-semibold text-white" : "bg-muted text-[#6C708E]"
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-[14px] py-[6px] text-[13px] transition-colors ${
+                    selectedCategoryId === category.id
+                      ? "border-primary bg-primary font-semibold text-white shadow-[0_2px_10px_rgba(224,122,95,0.28)]"
+                      : "border-transparent bg-muted text-[#6C708E] hover:border-border/80"
                   }`}
                   type="button"
-                  onClick={() => setSelectedCategoryId(category.id)}
+                  onClick={() =>
+                    setSelectedCategoryId((prev) => (prev === category.id ? undefined : category.id))
+                  }
+                  aria-pressed={selectedCategoryId === category.id}
                 >
                   {category.name}
                 </button>

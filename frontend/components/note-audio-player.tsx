@@ -1,6 +1,6 @@
-﻿"use client"
+"use client"
 
-import { Pause, Play } from "lucide-react"
+import { Pause, Play, RotateCcw, RotateCw } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -31,8 +31,9 @@ export function NoteAudioPlayer({ duration, audioUrl, onTimeUpdate, onPlayStateC
   const [currentTime, setCurrentTime] = useState(0)
   const [totalTime, setTotalTime] = useState(parseDurationLabel(duration))
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const progressTrackRef = useRef<HTMLDivElement | null>(null)
-  const waveformBars = useMemo(() => Array.from({ length: 40 }, (_, i) => baseBars[i % baseBars.length]), [])
+  const waveformTrackRef = useRef<HTMLDivElement | null>(null)
+  const scrubbingRef = useRef(false)
+  const waveformBars = useMemo(() => Array.from({ length: 44 }, (_, i) => baseBars[i % baseBars.length]), [])
 
   useEffect(() => {
     if (!audioUrl) {
@@ -74,12 +75,41 @@ export function NoteAudioPlayer({ duration, audioUrl, onTimeUpdate, onPlayStateC
     }
   }, [audioUrl, onPlayStateChange, onTimeUpdate])
 
+  const setAudioPosition = (nextTime: number) => {
+    const audio = audioRef.current
+    if (!audio || totalTime <= 0) return
+
+    const clamped = Math.min(totalTime, Math.max(0, nextTime))
+    audio.currentTime = clamped
+    setCurrentTime(clamped)
+    onTimeUpdate?.(clamped)
+  }
+
+  const seekFromTrack = (clientX: number, track: HTMLDivElement | null) => {
+    if (!track || totalTime <= 0) return
+
+    const rect = track.getBoundingClientRect()
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    setAudioPosition(ratio * totalTime)
+  }
+
+  const handleWavePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    scrubbingRef.current = true
+    seekFromTrack(event.clientX, waveformTrackRef.current)
+  }
+
+  const handleWavePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrubbingRef.current) return
+    seekFromTrack(event.clientX, waveformTrackRef.current)
+  }
+
+  const stopScrubbing = () => {
+    scrubbingRef.current = false
+  }
+
   const togglePlay = () => {
     const audio = audioRef.current
-    if (!audio) {
-      setPlaying((v) => !v)
-      return
-    }
+    if (!audio) return
 
     if (audio.paused) {
       void audio.play()
@@ -93,10 +123,16 @@ export function NoteAudioPlayer({ duration, audioUrl, onTimeUpdate, onPlayStateC
     onPlayStateChange?.(false)
   }
 
-  const progress = useMemo(() => {
+  const seekBySeconds = (delta: number) => {
+    const audio = audioRef.current
+    if (!audio || totalTime <= 0) return
+    setAudioPosition(audio.currentTime + delta)
+  }
+
+  const playedBars = useMemo(() => {
     if (!totalTime || totalTime <= 0) return 0
-    return Math.min(100, (currentTime / totalTime) * 100)
-  }, [currentTime, totalTime])
+    return Math.floor((currentTime / totalTime) * waveformBars.length)
+  }, [currentTime, totalTime, waveformBars.length])
 
   const displayDuration = useMemo(() => {
     if (audioUrl && totalTime > 0) {
@@ -106,23 +142,19 @@ export function NoteAudioPlayer({ duration, audioUrl, onTimeUpdate, onPlayStateC
     return duration || "0:00"
   }, [audioUrl, currentTime, duration, totalTime])
 
-  const seekToPosition = (clientX: number) => {
-    const track = progressTrackRef.current
-    const audio = audioRef.current
-    if (!track || !audio || totalTime <= 0) return
-
-    const rect = track.getBoundingClientRect()
-    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
-    const nextTime = ratio * totalTime
-
-    audio.currentTime = nextTime
-    setCurrentTime(nextTime)
-    onTimeUpdate?.(nextTime)
-  }
-
   return (
-    <Card className="gap-0 rounded-3xl border-border/70 bg-card p-4 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
-      <div className="mb-3 flex items-center gap-3">
+    <Card className="gap-0 rounded-3xl border-border/70 bg-card p-3 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+      <div className="flex items-center gap-2">
+        <Button
+          className="size-8 rounded-full border border-border/80 bg-transparent text-[#9EA2C0] hover:bg-muted hover:text-primary"
+          size="icon"
+          type="button"
+          variant="ghost"
+          onClick={() => seekBySeconds(-10)}
+        >
+          <RotateCcw className="size-4" />
+        </Button>
+
         <Button
           className="size-[42px] rounded-full shadow-[0_4px_16px_rgba(224,122,95,0.25)]"
           size="icon"
@@ -132,37 +164,44 @@ export function NoteAudioPlayer({ duration, audioUrl, onTimeUpdate, onPlayStateC
           {playing ? <Pause className="size-4.5" /> : <Play className="size-4.5 fill-current" />}
         </Button>
 
-        <div className="flex flex-1 items-center gap-[1.5px]">
-          {waveformBars.map((h, i) => (
-            <span
-              key={`${h}-${i}`}
-              className="w-[2.5px] shrink-0 rounded-full bg-primary"
-              style={{
-                height: `${(h / 100) * 32}px`,
-                opacity: 0.5 + h / 200,
-                animationName: playing ? "wave" : undefined,
-                animationDuration: playing ? `${0.8 + (i % 5) * 0.15}s` : undefined,
-                animationTimingFunction: playing ? "ease-in-out" : undefined,
-                animationIterationCount: playing ? "infinite" : undefined,
-                animationDirection: playing ? "alternate" : undefined,
-                animationDelay: playing ? `${i * 0.04}s` : undefined,
-              }}
-            />
-          ))}
+        <Button
+          className="size-8 rounded-full border border-border/80 bg-transparent text-[#9EA2C0] hover:bg-muted hover:text-primary"
+          size="icon"
+          type="button"
+          variant="ghost"
+          onClick={() => seekBySeconds(10)}
+        >
+          <RotateCw className="size-4" />
+        </Button>
+
+        <div
+          ref={waveformTrackRef}
+          className="min-w-0 flex-1 cursor-pointer touch-none"
+          onPointerDown={handleWavePointerDown}
+          onPointerMove={handleWavePointerMove}
+          onPointerUp={stopScrubbing}
+          onPointerCancel={stopScrubbing}
+          onPointerLeave={stopScrubbing}
+        >
+          <div className="flex w-full items-center justify-between">
+            {waveformBars.map((h, i) => (
+              <span
+                key={`${h}-${i}`}
+                className={`w-[2px] shrink-0 rounded-full ${i <= playedBars ? "bg-primary" : "bg-primary/35"}`}
+                style={{
+                  height: `${(h / 100) * 28}px`,
+                  opacity: i <= playedBars ? 0.95 : 0.45,
+                  transform: playing && i <= playedBars ? "scaleY(1.03)" : "scaleY(1)",
+                  transition: "all 120ms ease-out",
+                }}
+              />
+            ))}
+          </div>
         </div>
 
-        <span className="shrink-0 text-xs text-[#9EA2C0]">{displayDuration}</span>
+        <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-[#9EA2C0]">{displayDuration}</span>
       </div>
 
-      <div
-        ref={progressTrackRef}
-        className="h-[3px] cursor-pointer overflow-hidden rounded-full bg-border"
-        onClick={(event) => seekToPosition(event.clientX)}
-      >
-        <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
-      </div>
-
-      <style>{`@keyframes wave { from { transform: scaleY(0.4); } to { transform: scaleY(1); } }`}</style>
     </Card>
   )
 }
