@@ -52,7 +52,10 @@ const transcriptionWorker = new Worker('transcription', async(job) => {
   }
 
   try {
-    const textToEmbed =  `${title ?? ''} ${transcript}`.trim()
+    const textToEmbed = [title, description, transcript]
+      .map((part) => part?.trim())
+      .filter((part): part is string => Boolean(part))
+      .join(' ')
     embedding = await generateEmbedding(textToEmbed)
     console.log('Embedding generated successfully!');
   } catch (error) {
