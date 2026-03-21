@@ -24,6 +24,7 @@ export default function SearchPage() {
   const [error, setError] = useState("")
 
   const semanticEnabled = mode === "semantic"
+  const shortSemanticQuery = semanticEnabled && query.trim().length > 0 && query.trim().length <= 3
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -90,7 +91,9 @@ export default function SearchPage() {
           {semanticEnabled ? (
             <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-3 text-[12.5px] text-primary">
               <Zap className="size-4" />
-              AI-powered search understands meaning, not just keywords
+              {shortSemanticQuery
+                ? "Short queries use keyword matching for better accuracy"
+                : "AI-powered search understands meaning, not just keywords"}
             </div>
           ) : null}
 

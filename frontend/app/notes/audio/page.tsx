@@ -15,6 +15,32 @@ type UploadState = "idle" | "recording" | "processing"
 type BackendStatus = "uploading" | "processing" | "completed"
 
 const bars = [30, 55, 40, 80, 60, 90, 45, 70, 85, 50, 65, 95, 55, 75, 40, 85, 60, 70, 50, 90, 65, 45, 80, 55, 40, 70, 55, 35]
+const RECORDING_MIME_CANDIDATES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/mp4",
+  "audio/ogg;codecs=opus",
+] as const
+
+function formatRecordingTime(seconds: number) {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, "0")}`
+}
+
+function getSupportedRecordingMimeType() {
+  if (typeof window === "undefined" || typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") {
+    return ""
+  }
+
+  return RECORDING_MIME_CANDIDATES.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || ""
+}
+
+function getRecordingExtension(mimeType: string) {
+  if (mimeType.includes("mp4")) return "m4a"
+  if (mimeType.includes("ogg")) return "ogg"
+  return "webm"
+}
 
 function RecordingPulse() {
   return (
@@ -93,8 +119,14 @@ export default function VoiceMemoPage() {
   const [uploadPercent, setUploadPercent] = useState(0)
   const [processingPercent, setProcessingPercent] = useState(0)
   const [audioDurationSeconds, setAudioDurationSeconds] = useState(30)
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [noteId, setNoteId] = useState("")
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const recordingChunksRef = useRef<Blob[]>([])
+  const shouldUploadRecordingRef = useRef(false)
+  const isBusy = state === "processing"
 
   const totalPercent = useMemo(() => {
     if (backendStatus === "completed") return 100
@@ -107,6 +139,108 @@ export default function VoiceMemoPage() {
     if (backendStatus === "processing") return 1
     return 0
   }, [backendStatus])
+
+  const stopMicrophone = () => {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+    mediaStreamRef.current = null
+  }
+
+  const resetRecorder = () => {
+    mediaRecorderRef.current = null
+    recordingChunksRef.current = []
+    shouldUploadRecordingRef.current = false
+    stopMicrophone()
+  }
+
+  const startRecording = async () => {
+    setError("")
+
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("This browser does not support audio recording.")
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = getSupportedRecordingMimeType()
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+
+      mediaStreamRef.current = stream
+      mediaRecorderRef.current = recorder
+      recordingChunksRef.current = []
+      shouldUploadRecordingRef.current = false
+      setRecordingSeconds(0)
+      setState("recording")
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordingChunksRef.current.push(event.data)
+        }
+      }
+
+      recorder.onerror = () => {
+        setError("Recording failed. Please try again.")
+        setState("idle")
+        resetRecorder()
+      }
+
+      recorder.onstop = async () => {
+        const shouldUpload = shouldUploadRecordingRef.current
+        const chunks = recordingChunksRef.current
+        const recordedMimeType = recorder.mimeType || mimeType || "audio/webm"
+
+        resetRecorder()
+
+        if (!shouldUpload || chunks.length === 0) {
+          setState("idle")
+          setRecordingSeconds(0)
+          return
+        }
+
+        const blob = new Blob(chunks, { type: recordedMimeType })
+        const extension = getRecordingExtension(recordedMimeType)
+        const file = new File([blob], `voice-memo-${Date.now()}.${extension}`, {
+          type: recordedMimeType,
+        })
+
+        setRecordingSeconds(0)
+        await handleUploadFile(file)
+      }
+
+      recorder.start(250)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Microphone access was denied."
+      setError(message)
+      resetRecorder()
+      setState("idle")
+    }
+  }
+
+  const discardRecording = () => {
+    shouldUploadRecordingRef.current = false
+    setRecordingSeconds(0)
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop()
+      return
+    }
+
+    resetRecorder()
+    setState("idle")
+  }
+
+  const finishRecording = () => {
+    shouldUploadRecordingRef.current = true
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop()
+      return
+    }
+
+    setError("No recording was captured.")
+    resetRecorder()
+    setState("idle")
+  }
 
   const handleUploadFile = async (file: File) => {
     setError("")
@@ -145,6 +279,16 @@ export default function VoiceMemoPage() {
   }, [audioDurationSeconds, backendStatus, state])
 
   useEffect(() => {
+    if (state !== "recording") return
+
+    const timer = setInterval(() => {
+      setRecordingSeconds((prev) => prev + 1)
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [state])
+
+  useEffect(() => {
     if (!noteId || state !== "processing") return
 
     let active = true
@@ -179,14 +323,60 @@ export default function VoiceMemoPage() {
     }
   }, [noteId, router, state])
 
+  useEffect(() => {
+    return () => {
+      shouldUploadRecordingRef.current = false
+
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop()
+        return
+      }
+
+      mediaRecorderRef.current = null
+      recordingChunksRef.current = []
+      shouldUploadRecordingRef.current = false
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+      mediaStreamRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isBusy || typeof window === "undefined") return
+
+    window.history.pushState(null, "", window.location.href)
+
+    const handlePopState = () => {
+      window.history.pushState(null, "", window.location.href)
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ""
+    }
+
+    window.addEventListener("popstate", handlePopState)
+    window.addEventListener("beforeunload", handleBeforeUnload)
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState)
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+    }
+  }, [isBusy])
+
   return (
     <main className="min-h-screen bg-[#D9D6CF] dark:bg-[#060A14]">
       <section className="mx-auto min-h-screen w-full max-w-sm bg-[#EAE8E2] dark:bg-[#0B1220]">
         <header className="border-b border-border/60 bg-[#F6F5F2] px-5 pb-4 pt-7 dark:bg-[#101522]">
           <div className="flex items-center gap-3">
-            <Link className="text-[#656A88]" href="/notes">
-              <ChevronLeft className="size-5" />
-            </Link>
+            {isBusy ? (
+              <span aria-disabled="true" className="cursor-not-allowed text-[#656A88]/40">
+                <ChevronLeft className="size-5" />
+              </span>
+            ) : (
+              <Link className="text-[#656A88]" href="/notes">
+                <ChevronLeft className="size-5" />
+              </Link>
+            )}
             <h1 className="font-serif text-[20px] font-bold text-[#0B0B34] dark:text-[#FFF4E8]">Voice Memo</h1>
           </div>
         </header>
@@ -204,7 +394,7 @@ export default function VoiceMemoPage() {
                   className="relative z-10 size-20 rounded-full shadow-[0_8px_32px_rgba(224,122,95,0.25)]"
                   size="icon"
                   type="button"
-                  onClick={() => setState("recording")}
+                  onClick={() => void startRecording()}
                 >
                   <Mic className="size-8" />
                 </Button>
@@ -246,11 +436,13 @@ export default function VoiceMemoPage() {
                 <LiveWaveform />
               </div>
 
-              <p className="mb-2 font-mono text-[40px] font-light tracking-[2px] text-[#1C1D3A] dark:text-[#E8E3DA]">0:00</p>
+              <p className="mb-2 font-mono text-[40px] font-light tracking-[2px] text-[#1C1D3A] dark:text-[#E8E3DA]">
+                {formatRecordingTime(recordingSeconds)}
+              </p>
 
               <div className="mb-10 flex items-center gap-2 text-sm text-[#9C9FBC]">
                 <span className="size-2 animate-pulse rounded-full bg-red-500" />
-                Recording preview only
+                Recording in progress
               </div>
 
               <div className="flex items-center gap-6">
@@ -259,7 +451,7 @@ export default function VoiceMemoPage() {
                   size="icon"
                   type="button"
                   variant="outline"
-                  onClick={() => setState("idle")}
+                  onClick={discardRecording}
                 >
                   <Trash2 className="size-5" />
                 </Button>
@@ -268,7 +460,7 @@ export default function VoiceMemoPage() {
                   className="size-[68px] rounded-full bg-red-500 text-white shadow-[0_8px_32px_rgba(220,80,80,0.35)] hover:bg-red-600"
                   size="icon"
                   type="button"
-                  onClick={() => setState("idle")}
+                  onClick={finishRecording}
                 >
                   <span className="size-5 rounded-sm bg-white" />
                 </Button>
